@@ -13,6 +13,20 @@
 
 using namespace dax;
 
+namespace {
+
+#ifdef DAX_TEST_CURRENT_IS_1
+constexpr bool kCurrentIsOne = true;
+#else
+constexpr bool kCurrentIsOne = false;
+#endif
+
+static inline const float* curr_ptr(const float* p0, const float* p1) {
+  return kCurrentIsOne ? p1 : p0;
+}
+
+} // namespace
+
 static inline void ck(cudaError_t e) {
   if (e != cudaSuccess)
     throw std::runtime_error(cudaGetErrorString(e));
@@ -55,18 +69,24 @@ int main() {
     ck(cudaMemset(b.rho0, 0, N * sizeof(float)));
     ck(cudaMemset(b.rho1, 0, N * sizeof(float)));
     ck(cudaMemset(b.R0re, 0, N * sizeof(float)));
+    ck(cudaMemset(b.R1re, 0, N * sizeof(float)));
     ck(cudaMemset(b.R0im, 0, N * sizeof(float)));
+    ck(cudaMemset(b.R1im, 0, N * sizeof(float)));
     ck(cudaMemset(b.V0re, 0, N * sizeof(float)));
+    ck(cudaMemset(b.V1re, 0, N * sizeof(float)));
     ck(cudaMemset(b.V0im, 0, N * sizeof(float)));
+    ck(cudaMemset(b.V1im, 0, N * sizeof(float)));
     ck(cudaMemset(b.I, 0, N * sizeof(float)));
     ck(cudaMemset(b.delta, 0, N * sizeof(float)));
 
-    for (int s = 0; s < 50; s++)
+    for (int s = 0; s < 50; s++) {
       step_sim(s, g, mp, rt, b, l);
+      ck(cudaGetLastError());
+    }
     ck(cudaDeviceSynchronize());
 
-    auto rho = pull(b.rho0, N);
-    auto Rre = pull(b.R0re, N);
+    auto rho = pull(curr_ptr(b.rho0, b.rho1), N);
+    auto Rre = pull(curr_ptr(b.R0re, b.R1re), N);
     auto I = pull(b.I, N);
 
     ASSERT_TRUE(!testfw::has_nan_inf(rho));
@@ -90,12 +110,15 @@ int main() {
     const int cu = g.Nu / 2;
     rho_seed[idx(cx, cy, cz, cu, g.Nx, g.Ny, g.Nz, g.Nu)] = 1.0f;
     ck(cudaMemcpy(b.rho0, rho_seed.data(), N * sizeof(float), cudaMemcpyHostToDevice));
+    ck(cudaMemcpy(b.rho1, rho_seed.data(), N * sizeof(float), cudaMemcpyHostToDevice));
 
-    for (int s = 0; s < 30; s++)
+    for (int s = 0; s < 30; s++) {
       step_sim(s, g, mp, rt, b, l);
+      ck(cudaGetLastError());
+    }
     ck(cudaDeviceSynchronize());
 
-    auto rho2 = pull(b.rho0, N);
+    auto rho2 = pull(curr_ptr(b.rho0, b.rho1), N);
     const double center = rho2[idx(cx, cy, cz, cu, g.Nx, g.Ny, g.Nz, g.Nu)];
     ASSERT_LT(center, 1.0);
 

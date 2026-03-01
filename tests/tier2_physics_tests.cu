@@ -12,6 +12,20 @@
 
 using namespace dax;
 
+namespace {
+
+#ifdef DAX_TEST_CURRENT_IS_1
+constexpr bool kCurrentIsOne = true;
+#else
+constexpr bool kCurrentIsOne = false;
+#endif
+
+static inline const float* curr_ptr(const float* p0, const float* p1) {
+  return kCurrentIsOne ? p1 : p0;
+}
+
+} // namespace
+
 static inline void ck(cudaError_t e) {
   if (e != cudaSuccess)
     throw std::runtime_error(cudaGetErrorString(e));
@@ -64,10 +78,15 @@ int main() {
     Rre[idx(cx, cy, cz, cu, g.Nx, g.Ny, g.Nz, g.Nu)] = 1.0f;
 
     ck(cudaMemcpy(b.R0re, Rre.data(), N * sizeof(float), cudaMemcpyHostToDevice));
+    ck(cudaMemcpy(b.R1re, Rre.data(), N * sizeof(float), cudaMemcpyHostToDevice));
     ck(cudaMemcpy(b.R0im, Rim.data(), N * sizeof(float), cudaMemcpyHostToDevice));
+    ck(cudaMemcpy(b.R1im, Rim.data(), N * sizeof(float), cudaMemcpyHostToDevice));
     ck(cudaMemset(b.V0re, 0, N * sizeof(float)));
+    ck(cudaMemset(b.V1re, 0, N * sizeof(float)));
     ck(cudaMemset(b.V0im, 0, N * sizeof(float)));
+    ck(cudaMemset(b.V1im, 0, N * sizeof(float)));
     ck(cudaMemset(b.rho0, 0, N * sizeof(float)));
+    ck(cudaMemset(b.rho1, 0, N * sizeof(float)));
     ck(cudaMemset(b.I, 0, N * sizeof(float)));
     ck(cudaMemset(b.delta, 0, N * sizeof(float)));
 
@@ -77,23 +96,24 @@ int main() {
 
     for (int s = 0; s < 400; s++) {
       step_sim(s, g, mp, rt, b, l);
+      ck(cudaGetLastError());
 
       if (s == 0) {
-        auto a = pull(b.R0re, N);
-        auto b2 = pull(b.R0im, N);
+        auto a = pull(curr_ptr(b.R0re, b.R1re), N);
+        auto b2 = pull(curr_ptr(b.R0im, b.R1im), N);
         e0 = energy_R(a, b2);
       }
       if (s == 200) {
-        auto a = pull(b.R0re, N);
-        auto b2 = pull(b.R0im, N);
+        auto a = pull(curr_ptr(b.R0re, b.R1re), N);
+        auto b2 = pull(curr_ptr(b.R0im, b.R1im), N);
         e_mid = energy_R(a, b2);
       }
     }
     ck(cudaDeviceSynchronize());
 
     {
-      auto a = pull(b.R0re, N);
-      auto b2 = pull(b.R0im, N);
+      auto a = pull(curr_ptr(b.R0re, b.R1re), N);
+      auto b2 = pull(curr_ptr(b.R0im, b.R1im), N);
       e_end = energy_R(a, b2);
     }
 

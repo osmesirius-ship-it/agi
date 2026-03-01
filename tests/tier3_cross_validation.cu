@@ -11,6 +11,20 @@
 
 using namespace dax;
 
+namespace {
+
+#ifdef DAX_TEST_CURRENT_IS_1
+constexpr bool kCurrentIsOne = true;
+#else
+constexpr bool kCurrentIsOne = false;
+#endif
+
+static inline const float* curr_ptr(const float* p0, const float* p1) {
+  return kCurrentIsOne ? p1 : p0;
+}
+
+} // namespace
+
 static inline void ck(cudaError_t e) {
   if (e != cudaSuccess)
     throw std::runtime_error(cudaGetErrorString(e));
@@ -28,9 +42,9 @@ static Pulled pull_state(const GridSpec& g, const BuffersDevice& b) {
   p.Rim.resize(N);
   p.I.resize(N);
   p.delta.resize(N);
-  ck(cudaMemcpy(p.rho.data(), b.rho0, N * sizeof(float), cudaMemcpyDeviceToHost));
-  ck(cudaMemcpy(p.Rre.data(), b.R0re, N * sizeof(float), cudaMemcpyDeviceToHost));
-  ck(cudaMemcpy(p.Rim.data(), b.R0im, N * sizeof(float), cudaMemcpyDeviceToHost));
+  ck(cudaMemcpy(p.rho.data(), curr_ptr(b.rho0, b.rho1), N * sizeof(float), cudaMemcpyDeviceToHost));
+  ck(cudaMemcpy(p.Rre.data(), curr_ptr(b.R0re, b.R1re), N * sizeof(float), cudaMemcpyDeviceToHost));
+  ck(cudaMemcpy(p.Rim.data(), curr_ptr(b.R0im, b.R1im), N * sizeof(float), cudaMemcpyDeviceToHost));
   ck(cudaMemcpy(p.I.data(), b.I, N * sizeof(float), cudaMemcpyDeviceToHost));
   ck(cudaMemcpy(p.delta.data(), b.delta, N * sizeof(float), cudaMemcpyDeviceToHost));
   return p;
@@ -48,10 +62,15 @@ static void seed_ic(const GridSpec& g, BuffersDevice& b) {
   Rre[idx(cx, cy, cz, cu, g.Nx, g.Ny, g.Nz, g.Nu)] = 1.0f;
 
   ck(cudaMemcpy(b.rho0, rho.data(), N * sizeof(float), cudaMemcpyHostToDevice));
+  ck(cudaMemcpy(b.rho1, rho.data(), N * sizeof(float), cudaMemcpyHostToDevice));
   ck(cudaMemcpy(b.R0re, Rre.data(), N * sizeof(float), cudaMemcpyHostToDevice));
+  ck(cudaMemcpy(b.R1re, Rre.data(), N * sizeof(float), cudaMemcpyHostToDevice));
   ck(cudaMemcpy(b.R0im, Rim.data(), N * sizeof(float), cudaMemcpyHostToDevice));
+  ck(cudaMemcpy(b.R1im, Rim.data(), N * sizeof(float), cudaMemcpyHostToDevice));
   ck(cudaMemcpy(b.V0re, Vre.data(), N * sizeof(float), cudaMemcpyHostToDevice));
+  ck(cudaMemcpy(b.V1re, Vre.data(), N * sizeof(float), cudaMemcpyHostToDevice));
   ck(cudaMemcpy(b.V0im, Vim.data(), N * sizeof(float), cudaMemcpyHostToDevice));
+  ck(cudaMemcpy(b.V1im, Vim.data(), N * sizeof(float), cudaMemcpyHostToDevice));
   ck(cudaMemset(b.I, 0, N * sizeof(float)));
   ck(cudaMemset(b.delta, 0, N * sizeof(float)));
 }
@@ -86,7 +105,10 @@ int main() {
     constexpr int steps = 200;
     for (int s = 0; s < steps; s++) {
       step_sim(s, g, mp, rt_exp, bE, lE);
+      ck(cudaGetLastError());
+
       step_sim(s, g, mp, rt_adi, bA, lA);
+      ck(cudaGetLastError());
     }
     ck(cudaDeviceSynchronize());
 
