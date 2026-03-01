@@ -6,35 +6,61 @@
 
 #include <cuda_runtime.h>
 
+#include <cmath>
 #include <iostream>
 #include <vector>
 
 using namespace dax;
-
-namespace {
-
-#ifdef DAX_TEST_CURRENT_IS_1
-constexpr bool kCurrentIsOne = true;
-#else
-constexpr bool kCurrentIsOne = false;
-#endif
-
-static inline const float* curr_ptr(const float* p0, const float* p1) {
-  return kCurrentIsOne ? p1 : p0;
-}
-
-} // namespace
 
 static inline void ck(cudaError_t e) {
   if (e != cudaSuccess)
     throw std::runtime_error(cudaGetErrorString(e));
 }
 
+static bool detect_current_is_one(const GridSpec& g,
+                                  ModelParams& mp,
+                                  RuntimeSpec& rt,
+                                  BuffersDevice& b,
+                                  LUTsDevice& l) {
+  const float a = 111.0f;
+  const float c = 222.0f;
+  ck(cudaMemcpy(b.rho0, &a, sizeof(float), cudaMemcpyHostToDevice));
+  ck(cudaMemcpy(b.rho1, &c, sizeof(float), cudaMemcpyHostToDevice));
+
+  step_sim(0, g, mp, rt, b, l);
+  ck(cudaGetLastError());
+  ck(cudaDeviceSynchronize());
+
+  float r0 = 0;
+  float r1 = 0;
+  ck(cudaMemcpy(&r0, b.rho0, sizeof(float), cudaMemcpyDeviceToHost));
+  ck(cudaMemcpy(&r1, b.rho1, sizeof(float), cudaMemcpyDeviceToHost));
+
+  const bool rho0_changed = std::abs(r0 - 111.0f) > 1e-6f;
+  const bool rho1_changed = std::abs(r1 - 222.0f) > 1e-6f;
+
+  if (rho0_changed == rho1_changed)
+    return false;
+  return rho1_changed;
+}
+
+static inline const float* curr_rho_ptr(const BuffersDevice& b, bool current_is_one) {
+  return current_is_one ? b.rho1 : b.rho0;
+}
+
+static inline const float* curr_Rre_ptr(const BuffersDevice& b, bool current_is_one) {
+  return current_is_one ? b.R1re : b.R0re;
+}
+
+static inline const float* curr_Rim_ptr(const BuffersDevice& b, bool current_is_one) {
+  return current_is_one ? b.R1im : b.R0im;
+}
+
 struct Pulled {
   std::vector<float> rho, Rre, Rim, I, delta;
 };
 
-static Pulled pull_state(const GridSpec& g, const BuffersDevice& b) {
+static Pulled pull_state(const GridSpec& g, const BuffersDevice& b, bool current_is_one) {
   const size_t N = static_cast<size_t>(g.Nx) * g.Ny * g.Nz * g.Nu;
   Pulled p;
   p.rho.resize(N);
@@ -42,9 +68,9 @@ static Pulled pull_state(const GridSpec& g, const BuffersDevice& b) {
   p.Rim.resize(N);
   p.I.resize(N);
   p.delta.resize(N);
-  ck(cudaMemcpy(p.rho.data(), curr_ptr(b.rho0, b.rho1), N * sizeof(float), cudaMemcpyDeviceToHost));
-  ck(cudaMemcpy(p.Rre.data(), curr_ptr(b.R0re, b.R1re), N * sizeof(float), cudaMemcpyDeviceToHost));
-  ck(cudaMemcpy(p.Rim.data(), curr_ptr(b.R0im, b.R1im), N * sizeof(float), cudaMemcpyDeviceToHost));
+  ck(cudaMemcpy(p.rho.data(), curr_rho_ptr(b, current_is_one), N * sizeof(float), cudaMemcpyDeviceToHost));
+  ck(cudaMemcpy(p.Rre.data(), curr_Rre_ptr(b, current_is_one), N * sizeof(float), cudaMemcpyDeviceToHost));
+  ck(cudaMemcpy(p.Rim.data(), curr_Rim_ptr(b, current_is_one), N * sizeof(float), cudaMemcpyDeviceToHost));
   ck(cudaMemcpy(p.I.data(), b.I, N * sizeof(float), cudaMemcpyDeviceToHost));
   ck(cudaMemcpy(p.delta.data(), b.delta, N * sizeof(float), cudaMemcpyDeviceToHost));
   return p;
@@ -102,6 +128,11 @@ int main() {
     seed_ic(g, bE);
     seed_ic(g, bA);
 
+    const bool current_is_one = detect_current_is_one(g, mp, rt_exp, bE, lE);
+
+    seed_ic(g, bE);
+    seed_ic(g, bA);
+
     constexpr int steps = 200;
     for (int s = 0; s < steps; s++) {
       step_sim(s, g, mp, rt_exp, bE, lE);
@@ -112,8 +143,8 @@ int main() {
     }
     ck(cudaDeviceSynchronize());
 
-    auto E = pull_state(g, bE);
-    auto A = pull_state(g, bA);
+    auto E = pull_state(g, bE, current_is_one);
+    auto A = pull_state(g, bA, current_is_one);
 
     const auto drho = testfw::compare_rel_l2(E.rho, A.rho);
     const auto dRre = testfw::compare_rel_l2(E.Rre, A.Rre);

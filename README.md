@@ -21,12 +21,8 @@ cmake --build build -j
 
 ### Ping-pong buffer selection
 
-By default, tests read the `*0` field buffers as the current state. If your stepper keeps the
-current state in `*1` after stepping, configure with:
-
-```bash
-cmake -S . -B build -DDAX_TEST_CURRENT_IS_1=ON
-```
+Tests auto-detect whether the post-step current state resides in `*0` or `*1` buffers by
+running a one-step marker probe before assertions.
 
 ### CUDA launch hardening
 

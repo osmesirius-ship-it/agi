@@ -13,23 +13,44 @@
 
 using namespace dax;
 
-namespace {
-
-#ifdef DAX_TEST_CURRENT_IS_1
-constexpr bool kCurrentIsOne = true;
-#else
-constexpr bool kCurrentIsOne = false;
-#endif
-
-static inline const float* curr_ptr(const float* p0, const float* p1) {
-  return kCurrentIsOne ? p1 : p0;
-}
-
-} // namespace
-
 static inline void ck(cudaError_t e) {
   if (e != cudaSuccess)
     throw std::runtime_error(cudaGetErrorString(e));
+}
+
+static bool detect_current_is_one(const GridSpec& g,
+                                  ModelParams& mp,
+                                  RuntimeSpec& rt,
+                                  BuffersDevice& b,
+                                  LUTsDevice& l) {
+  const float a = 111.0f;
+  const float c = 222.0f;
+  ck(cudaMemcpy(b.rho0, &a, sizeof(float), cudaMemcpyHostToDevice));
+  ck(cudaMemcpy(b.rho1, &c, sizeof(float), cudaMemcpyHostToDevice));
+
+  step_sim(0, g, mp, rt, b, l);
+  ck(cudaGetLastError());
+  ck(cudaDeviceSynchronize());
+
+  float r0 = 0;
+  float r1 = 0;
+  ck(cudaMemcpy(&r0, b.rho0, sizeof(float), cudaMemcpyDeviceToHost));
+  ck(cudaMemcpy(&r1, b.rho1, sizeof(float), cudaMemcpyDeviceToHost));
+
+  const bool rho0_changed = std::abs(r0 - 111.0f) > 1e-6f;
+  const bool rho1_changed = std::abs(r1 - 222.0f) > 1e-6f;
+
+  if (rho0_changed == rho1_changed)
+    return false;
+  return rho1_changed;
+}
+
+static inline const float* curr_ptr(const BuffersDevice& b, bool current_is_one) {
+  return current_is_one ? b.rho1 : b.rho0;
+}
+
+static inline const float* curr_Rre_ptr(const BuffersDevice& b, bool current_is_one) {
+  return current_is_one ? b.R1re : b.R0re;
 }
 
 static std::vector<float> pull(const float* dptr, size_t n) {
@@ -79,14 +100,29 @@ int main() {
     ck(cudaMemset(b.I, 0, N * sizeof(float)));
     ck(cudaMemset(b.delta, 0, N * sizeof(float)));
 
+    const bool current_is_one = detect_current_is_one(g, mp, rt, b, l);
+
+    ck(cudaMemset(b.rho0, 0, N * sizeof(float)));
+    ck(cudaMemset(b.rho1, 0, N * sizeof(float)));
+    ck(cudaMemset(b.R0re, 0, N * sizeof(float)));
+    ck(cudaMemset(b.R1re, 0, N * sizeof(float)));
+    ck(cudaMemset(b.R0im, 0, N * sizeof(float)));
+    ck(cudaMemset(b.R1im, 0, N * sizeof(float)));
+    ck(cudaMemset(b.V0re, 0, N * sizeof(float)));
+    ck(cudaMemset(b.V1re, 0, N * sizeof(float)));
+    ck(cudaMemset(b.V0im, 0, N * sizeof(float)));
+    ck(cudaMemset(b.V1im, 0, N * sizeof(float)));
+    ck(cudaMemset(b.I, 0, N * sizeof(float)));
+    ck(cudaMemset(b.delta, 0, N * sizeof(float)));
+
     for (int s = 0; s < 50; s++) {
       step_sim(s, g, mp, rt, b, l);
       ck(cudaGetLastError());
     }
     ck(cudaDeviceSynchronize());
 
-    auto rho = pull(curr_ptr(b.rho0, b.rho1), N);
-    auto Rre = pull(curr_ptr(b.R0re, b.R1re), N);
+    auto rho = pull(curr_ptr(b, current_is_one), N);
+    auto Rre = pull(curr_Rre_ptr(b, current_is_one), N);
     auto I = pull(b.I, N);
 
     ASSERT_TRUE(!testfw::has_nan_inf(rho));
@@ -118,7 +154,7 @@ int main() {
     }
     ck(cudaDeviceSynchronize());
 
-    auto rho2 = pull(curr_ptr(b.rho0, b.rho1), N);
+    auto rho2 = pull(curr_ptr(b, current_is_one), N);
     const double center = rho2[idx(cx, cy, cz, cu, g.Nx, g.Ny, g.Nz, g.Nu)];
     ASSERT_LT(center, 1.0);
 
