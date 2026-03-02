@@ -31,6 +31,15 @@ ctest --test-dir build --output-on-failure
 ```
 
 
+### Build runtime target
+
+A minimal runtime entrypoint is also available:
+
+```bash
+cmake --build build -j --target oracle
+./build/oracle
+```
+
 ## Full documentation
 
 See `docs/PROJECT_DOCUMENTATION.md` for architecture, data model, test semantics, and extension guidelines.

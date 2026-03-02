@@ -16,6 +16,8 @@ The primary deliverable is a 3-tier executable test suite:
 .
 ├── CMakeLists.txt                 # Root build config (C++17 + tests)
 ├── README.md                      # Quick-start and high-level usage
+├── src/
+│   └── main.cpp                   # Minimal runtime/oracle entrypoint
 ├── docs/
 │   └── PROJECT_DOCUMENTATION.md   # This document
 └── tests/
@@ -49,6 +51,15 @@ ctest --test-dir build --output-on-failure
 ./build/tests/tier2_physics_tests
 ./build/tests/tier3_cross_validation
 ```
+
+### Build and run runtime target
+
+```bash
+cmake --build build -j --target oracle
+./build/oracle
+```
+
+The `oracle` executable is currently a minimal scaffold target intended to hold the production runtime pipeline as it is migrated out of test-only code.
 
 ## 4. Model Data Structures
 
