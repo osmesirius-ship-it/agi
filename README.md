@@ -29,3 +29,8 @@ cmake -S . -B build
 cmake --build build -j
 ctest --test-dir build --output-on-failure
 ```
+
+
+## Full documentation
+
+See `docs/PROJECT_DOCUMENTATION.md` for architecture, data model, test semantics, and extension guidelines.
