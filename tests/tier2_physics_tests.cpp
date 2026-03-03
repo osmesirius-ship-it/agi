@@ -46,7 +46,8 @@ int main() {
     ASSERT_TRUE(std::isfinite(e_mid));
     ASSERT_TRUE(std::isfinite(e_end));
     ASSERT_LT(e_end, 1e6);
-    ASSERT_LT(e_end, e0 * 1.05);
+    ASSERT_LT(e_end, e_mid);
+    ASSERT_LT(e_mid, e0);
 
     std::cout << "✓ Tier 2 physics tests PASS\n";
     return 0;

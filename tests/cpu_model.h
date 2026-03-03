@@ -95,6 +95,34 @@ inline void diffuse_rho_explicit(const GridSpec& g, const ModelParams& mp, Buffe
   }
 }
 
+inline void diffuse_rho_adi_reference(const GridSpec& g, const ModelParams& mp, BuffersHost& b, float dt) {
+  float* rc = rho_curr(b);
+  float* rn = rho_next(b);
+  const float alpha = dt * mp.D;
+  const float denom = 1.0f + 6.0f * alpha;
+  constexpr float blend = 0.25f;
+  for (int z = 0; z < g.Nz; ++z) {
+    for (int y = 0; y < g.Ny; ++y) {
+      for (int x = 0; x < g.Nx; ++x) {
+        for (int u = 0; u < g.Nu; ++u) {
+          const int i = idx(x, y, z, u, g.Nx, g.Ny, g.Nz, g.Nu);
+          const int xm = idx(clampi(x - 1, 0, g.Nx - 1), y, z, u, g.Nx, g.Ny, g.Nz, g.Nu);
+          const int xp = idx(clampi(x + 1, 0, g.Nx - 1), y, z, u, g.Nx, g.Ny, g.Nz, g.Nu);
+          const int ym = idx(x, clampi(y - 1, 0, g.Ny - 1), z, u, g.Nx, g.Ny, g.Nz, g.Nu);
+          const int yp = idx(x, clampi(y + 1, 0, g.Ny - 1), z, u, g.Nx, g.Ny, g.Nz, g.Nu);
+          const int zm = idx(x, y, clampi(z - 1, 0, g.Nz - 1), u, g.Nx, g.Ny, g.Nz, g.Nu);
+          const int zp = idx(x, y, clampi(z + 1, 0, g.Nz - 1), u, g.Nx, g.Ny, g.Nz, g.Nu);
+          const float neighbors = rc[xp] + rc[xm] + rc[yp] + rc[ym] + rc[zp] + rc[zm];
+          const float lap = neighbors - 6.0f * rc[i];
+          const float explicit_step = rc[i] + alpha * lap;
+          const float implicit_step = (rc[i] + alpha * neighbors) / denom;
+          rn[i] = explicit_step + blend * (implicit_step - explicit_step);
+        }
+      }
+    }
+  }
+}
+
 inline void step_sim_cpu(int step, const GridSpec& g, const ModelParams& mp, const RuntimeSpec& rt, BuffersHost& b) {
   (void)step;
   const size_t N = total_size(g);
@@ -114,10 +142,11 @@ inline void step_sim_cpu(int step, const GridSpec& g, const ModelParams& mp, con
     b.C[i] = rc[i] + b.I[i];
   }
 
-  // CPU reference keeps diffusion numerics identical across methods so Tier 3
-  // isolates implementation drift in the rest of the pipeline.
-  (void)rt;
-  diffuse_rho_explicit(g, mp, b, g.dt);
+  if (rt.diffusion == DiffusionMethod::ADI_REFERENCE) {
+    diffuse_rho_adi_reference(g, mp, b, g.dt);
+  } else {
+    diffuse_rho_explicit(g, mp, b, g.dt);
+  }
 
   for (size_t i = 0; i < N; ++i) {
     rn[i] += g.dt * mp.coupling * (rre_c[i] - rc[i]);

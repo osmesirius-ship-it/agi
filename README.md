@@ -28,6 +28,14 @@ Buffers use ping-pong host vectors in the same flattened layout `[z][y][x][u]` w
 cmake -S . -B build
 cmake --build build -j
 ctest --test-dir build --output-on-failure
+
+# Optional runtime executable
+./build/oracle 200 1e-4
+./build/oracle --diffusion adi --json
+
+# Oracle chat UI (local)
+python3 tools/oracle_chat_server.py
+# open http://127.0.0.1:8080
 ```
 
 
