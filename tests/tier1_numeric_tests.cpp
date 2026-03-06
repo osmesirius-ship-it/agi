@@ -62,7 +62,7 @@ int main() {
     const double s1 = sum_host(rho2);
     ASSERT_TRUE(std::isfinite(s1));
     ASSERT_LT(std::abs(s1), 1e9);
-    ASSERT_LT(std::abs(s1 - s0), 1e6);
+    ASSERT_LT(std::abs(s1 - s0), 1e-2);
 
     std::cout << "✓ Tier 1 numeric tests PASS\n";
     return 0;

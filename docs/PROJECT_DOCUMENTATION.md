@@ -15,6 +15,12 @@ The primary deliverable is a 3-tier executable test suite:
 ```text
 .
 ├── CMakeLists.txt                 # Root build config (C++17 + tests)
+├── src/
+│   └── oracle_main.cpp            # Minimal runtime executable
+├── ui/
+│   └── chat.html                  # Browser chat interface
+├── tools/
+│   └── oracle_chat_server.py      # Local HTTP bridge to oracle binary
 ├── README.md                      # Quick-start and high-level usage
 ├── docs/
 │   └── PROJECT_DOCUMENTATION.md   # This document
@@ -48,6 +54,16 @@ ctest --test-dir build --output-on-failure
 ./build/tests/tier1_numeric_tests
 ./build/tests/tier2_physics_tests
 ./build/tests/tier3_cross_validation
+```
+
+### Run the runtime executable
+
+```bash
+./build/oracle 200 1e-4
+./build/oracle --diffusion adi --json
+
+python3 tools/oracle_chat_server.py
+# then open http://127.0.0.1:8080
 ```
 
 ## 4. Model Data Structures
@@ -112,7 +128,7 @@ Checks include:
 Checks include:
 
 - Oscillator energy remains finite.
-- Long-horizon energy remains bounded and does not explode.
+- Oscillator energy decays monotonically over measured windows.
 
 ## Tier 3: Cross-Validation
 
